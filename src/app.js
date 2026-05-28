@@ -158,7 +158,22 @@ const translations = {
     navCommissions: "佣金",
     navSalesTax: "销售税",
     navOtherFXTranslations: "汇兑折算",
-    navEndingValue: "期末净值"
+    navEndingValue: "期末净值",
+    realizedPL: "已实现盈亏",
+    dataQuality: "数据质量",
+    dataQualityOk: "关键区块完整",
+    dataQualityIssues: "需关注",
+    sortedByMarketValue: "按市值排序",
+    ofPortfolio: "组合占比",
+    negativeCash: "现金为负",
+    missingNav: "缺失 NAV",
+    missingPositions: "缺失持仓",
+    missingTrades: "缺失交易",
+    missingRates: "缺失汇率",
+    warningsCount: "条警告",
+    noCriticalIssues: "暂无关键异常",
+    cashRatio: "现金占比",
+    reportSections: "报表区块"
   },
   en: {
     htmlLang: "en",
@@ -302,7 +317,22 @@ const translations = {
     navCommissions: "Commissions",
     navSalesTax: "Sales tax",
     navOtherFXTranslations: "Other FX translations",
-    navEndingValue: "Ending value"
+    navEndingValue: "Ending value",
+    realizedPL: "Realized P/L",
+    dataQuality: "Data quality",
+    dataQualityOk: "Core sections complete",
+    dataQualityIssues: "Needs attention",
+    sortedByMarketValue: "Sorted by market value",
+    ofPortfolio: "of portfolio",
+    negativeCash: "Negative cash",
+    missingNav: "Missing NAV",
+    missingPositions: "Missing positions",
+    missingTrades: "Missing trades",
+    missingRates: "Missing rates",
+    warningsCount: "warnings",
+    noCriticalIssues: "No critical issues",
+    cashRatio: "Cash ratio",
+    reportSections: "Report sections"
   }
 };
 
@@ -326,6 +356,19 @@ const SHARE_IMAGE_SIZES = {
 const SHARE_LOGO_SRC = "./assets/ibkr-logo.svg";
 const SHARE_IMAGE_COLORS = ["#e31937", "#5f6368", "#a41124", "#2b2f35", "#f15b61", "#878d96"];
 const SHARE_IMAGE_FONT = 'Inter, "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif';
+const ASSET_COLORS = {
+  Cash: "#6f7782",
+  Stocks: "#315f8f",
+  Stock: "#315f8f",
+  Options: "#8a5f2b",
+  Option: "#8a5f2b",
+  "Equity and Index Options": "#8a5f2b",
+  Forex: "#08725f",
+  Currencies: "#08725f",
+  Total: "#20211f",
+  Other: "#7b7288"
+};
+const CHART_COLORS = ["#315f8f", "#8a5f2b", "#08725f", "#7b7288", "#a55353", "#6d7d44", "#9b6f8d", "#4b7f8f"];
 
 bindLanguageSwitcher();
 bindThemeToggle();
@@ -708,11 +751,12 @@ function renderOverview(data) {
   const portfolioAllocation = buildPortfolioAllocation(data);
 
   return `
+    ${renderQualityStrip(data)}
     ${renderKpis(data)}
     <div class="insight-strip">
       ${renderMiniStat(t("tradeOrders"), formatNumber(data.tradeSummary.orderCount), renderDateRange(data.tradeSummary))}
       ${renderMiniStat(t("currentPositions"), formatNumber(data.positions.length), `${data.assetAllocation.length} ${t("assetClasses")}`)}
-      ${renderMiniStat(t("recognizedSections"), formatNumber(Object.keys(data.sectionStats).length), "IBKR CSV")}
+      ${renderMiniStat(t("recognizedSections"), formatNumber(Object.keys(data.sectionStats).length), t("reportSections"))}
     </div>
     <div class="content-grid overview-grid">
       <article class="data-card">
@@ -755,6 +799,42 @@ function renderOverview(data) {
   `;
 }
 
+function renderQualityStrip(data) {
+  const issues = buildQualityIssues(data);
+  const ok = issues.length === 0;
+
+  return `
+    <section class="quality-strip ${ok ? "is-ok" : "has-issues"}" aria-label="${t("dataQuality")}">
+      <div>
+        <span class="quality-label">${t("dataQuality")}</span>
+        <strong>${ok ? t("dataQualityOk") : `${issues.length} ${t("dataQualityIssues")}`}</strong>
+      </div>
+      <div class="quality-items">
+        ${
+          ok
+            ? `<span class="quality-chip is-ok">${t("noCriticalIssues")}</span>`
+            : issues.map((issue) => `<span class="quality-chip ${issue.tone}">${escapeHtml(issue.label)}</span>`).join("")
+        }
+      </div>
+    </section>
+  `;
+}
+
+function buildQualityIssues(data) {
+  const sectionNames = Object.keys(data.sectionStats || {});
+  const hasSection = (needle) => sectionNames.some((name) => name.toLowerCase().includes(needle));
+  const issues = [];
+
+  if ((data.nav.cash || 0) < 0) issues.push({ label: t("negativeCash"), tone: "is-critical" });
+  if (!hasSection("net asset value")) issues.push({ label: t("missingNav"), tone: "is-critical" });
+  if (!hasSection("open positions")) issues.push({ label: t("missingPositions"), tone: "is-warning" });
+  if (!hasSection("trades")) issues.push({ label: t("missingTrades"), tone: "is-warning" });
+  if (!Object.keys(data.exchangeRates || {}).length) issues.push({ label: t("missingRates"), tone: "is-warning" });
+  if (data.warnings?.length) issues.push({ label: `${formatNumber(data.warnings.length)} ${t("warningsCount")}`, tone: "is-warning" });
+
+  return issues;
+}
+
 function buildPortfolioAllocation(data) {
   const rows = data.assetAllocation.map((row) => ({ ...row }));
   const cash = Math.max(0, data.nav.cash || 0);
@@ -781,23 +861,23 @@ function buildPortfolioAllocation(data) {
 
 function renderKpis(data) {
   const total = data.plSummary.total;
+  const navTotal = Math.abs(data.nav.total || 0);
+  const cashRatio = navTotal ? (data.nav.cash / navTotal) * 100 : 0;
   const cards = [
-    [t("endingNav"), formatMoney(data.nav.total, data.baseCurrency), `${t("cash")} ${formatMoney(data.nav.cash, data.baseCurrency)}`, data.nav.total],
-    [t("totalPL"), formatMoney(total.total, data.baseCurrency), `${t("realized")} ${formatMoney(total.realized, data.baseCurrency)}`, total.total],
-    [t("unrealizedPL"), formatMoney(total.unrealized, data.baseCurrency), t("realizedUnrealized"), total.unrealized],
-    ["TWR", formatPercent(data.nav.rateOfReturn), t("timeWeightedReturn"), data.nav.rateOfReturn],
-    [t("optionPremium"), formatMoney(data.tradeSummary.optionPremium, data.baseCurrency), `${formatNumber(data.tradeSummary.optionOrders)} ${t("optionOrders")}`, data.tradeSummary.optionPremium],
-    [t("commissionFees"), formatMoney(data.tradeSummary.totalCommissions, data.baseCurrency), t("allOrderTrades"), -data.tradeSummary.totalCommissions],
-    [t("stockPL"), formatMoney(data.plSummary.stocks.total, data.baseCurrency), t("stocks"), data.plSummary.stocks.total],
-    [t("optionPL"), formatMoney(data.plSummary.options.total, data.baseCurrency), t("options"), data.plSummary.options.total]
+    [t("endingNav"), formatMoney(data.nav.total, data.baseCurrency), `${t("cash")} ${formatMoney(data.nav.cash, data.baseCurrency)} · ${t("cashRatio")} ${formatPercent(cashRatio)}`, data.nav.total, "primary"],
+    [t("totalPL"), formatMoney(total.total, data.baseCurrency), `${t("realized")} ${formatMoney(total.realized, data.baseCurrency)}`, total.total, "primary"],
+    [t("unrealizedPL"), formatMoney(total.unrealized, data.baseCurrency), t("realizedUnrealized"), total.unrealized, "core"],
+    [t("realizedPL"), formatMoney(total.realized, data.baseCurrency), t("realized"), total.realized, "core"],
+    ["TWR", formatPercent(data.nav.rateOfReturn), t("timeWeightedReturn"), data.nav.rateOfReturn, "core"],
+    [t("commissionFees"), formatMoney(data.tradeSummary.totalCommissions, data.baseCurrency), t("allOrderTrades"), -data.tradeSummary.totalCommissions, "secondary"]
   ];
 
   return `
     <div class="kpi-grid">
       ${cards
         .map(
-          ([label, value, foot, tone]) => `
-            <div class="metric-card">
+          ([label, value, foot, tone, priority]) => `
+            <div class="metric-card metric-${escapeHtml(priority || "secondary")}">
               <div class="metric-label">${label}</div>
               <div class="metric-value ${valueTone(tone)}">${value}</div>
               <div class="metric-foot">${escapeHtml(foot)}</div>
@@ -861,7 +941,7 @@ function renderAllocation(rows, currency) {
                 <strong>${formatPercent(row.weight * 100)}</strong>
               </div>
               <div class="allocation-track">
-                <div class="allocation-fill" style="width:${Math.max(2, row.weight * 100)}%"></div>
+                <div class="allocation-fill" style="width:${Math.max(2, row.weight * 100)}%; background:${assetColor(row.name)}"></div>
               </div>
               <div class="card-kicker">${formatMoney(row.value, currency)}</div>
             </div>
@@ -875,14 +955,13 @@ function renderAllocation(rows, currency) {
 function renderAssetDonut(rows, currency) {
   if (!rows.length) return `<div class="empty-state">${t("noPositionMarketValue")}</div>`;
 
-  const palette = ["#3186f6", "#0b6b5d", "#b57936", "#7c6ee6", "#d85d5d", "#2aa6a1"];
   let cursor = 0;
   const gradient = rows
     .map((row, index) => {
       const start = cursor;
       const end = cursor + row.weight * 100;
       cursor = end;
-      return `${palette[index % palette.length]} ${start.toFixed(2)}% ${end.toFixed(2)}%`;
+      return `${assetColor(row.name, index)} ${start.toFixed(2)}% ${end.toFixed(2)}%`;
     })
     .join(", ");
   const total = rows.reduce((sum, row) => sum + row.value, 0);
@@ -898,10 +977,11 @@ function renderAssetDonut(rows, currency) {
             (row, index) => `
               <div class="donut-legend-row">
                 <span class="donut-legend-label">
-                  <i style="background:${palette[index % palette.length]}"></i>
+                  <i style="background:${assetColor(row.name, index)}"></i>
                   ${escapeHtml(displayGroupName(row.name))}
                 </span>
                 <strong>${formatPercent(row.weight * 100)}</strong>
+                <small>${formatMoney(row.value, currency)}</small>
               </div>
             `
           )
@@ -915,18 +995,24 @@ function renderAssetDonut(rows, currency) {
 function renderNavChange(rows, currency) {
   const visibleRows = rows.filter((row) => row.value !== 0 || row.key === "startingValue" || row.key === "endingValue");
   if (!visibleRows.length) return `<div class="empty-state">${t("noNavDetails")}</div>`;
+  const maxAbs = Math.max(...visibleRows.map((row) => Math.abs(row.value)), 1);
 
   return `
-    <div class="nav-list">
+    <div class="nav-list nav-waterfall">
       ${visibleRows
-        .map(
-          (row) => `
-            <div class="nav-row">
+        .map((row) => {
+          const width = Math.max(4, Math.min(100, (Math.abs(row.value) / maxAbs) * 100));
+          const isEndpoint = row.key === "startingValue" || row.key === "endingValue";
+          return `
+            <div class="nav-row ${isEndpoint ? "is-endpoint" : ""}">
               <span class="nav-label">${escapeHtml(displayNavLabel(row))}</span>
               <span class="nav-amount ${valueTone(row.value)}">${formatMoney(row.value, currency)}</span>
+              <span class="nav-track" aria-hidden="true">
+                <span class="nav-fill ${row.value < 0 ? "is-negative" : "is-positive"}" style="width:${width}%"></span>
+              </span>
             </div>
-          `
-        )
+          `;
+        })
         .join("")}
     </div>
   `;
@@ -938,12 +1024,14 @@ function renderWarnings(warnings) {
 }
 
 function renderPositions(data) {
+  const sortedPositions = sortPositionsByValue(data.positions);
+
   return `
     <div class="data-card">
       <div class="table-tools">
         <div>
           <h2 class="card-title">${t("currentPositions")}</h2>
-          <div class="card-kicker">${formatNumber(data.positions.length)} ${t("rows")}</div>
+          <div class="card-kicker">${formatNumber(data.positions.length)} ${t("rows")} · ${t("sortedByMarketValue")}</div>
         </div>
         <label class="search-box">
           ${icons.search}
@@ -958,14 +1046,14 @@ function renderPositions(data) {
               <th>${t("asset")}</th>
               <th>${t("side")}</th>
               <th class="numeric">${t("quantity")}</th>
-              <th class="numeric">${t("marketValue")}</th>
+              <th class="numeric is-sorted" aria-sort="descending">${t("marketValue")}</th>
               <th class="numeric">${t("cost")}</th>
               <th class="numeric">${t("unrealized")}</th>
               <th>${t("currency")}</th>
             </tr>
           </thead>
           <tbody id="positionsTableBody">
-            ${renderPositionRows(data.positions, data.baseCurrency)}
+            ${renderPositionRows(sortedPositions, data.baseCurrency)}
           </tbody>
         </table>
       </div>
@@ -978,10 +1066,16 @@ function renderPositions(data) {
         </div>
       </div>
       <div id="positionAssetPie">
-        ${renderPositionAssetPie(data.positions, data.baseCurrency)}
+        ${renderPositionAssetPie(sortedPositions, data.baseCurrency)}
       </div>
     </article>
   `;
+}
+
+function sortPositionsByValue(positions) {
+  return positions
+    .slice()
+    .sort((a, b) => Math.abs(b.value || 0) - Math.abs(a.value || 0));
 }
 
 function renderPositionRows(positions, currency) {
@@ -992,17 +1086,21 @@ function renderPositionRows(positions, currency) {
   return positions
     .map(
       (position) => `
-        <tr>
+        <tr class="${position.unrealizedPL < 0 ? "row-negative" : position.unrealizedPL > 0 ? "row-positive" : ""}">
           <td>
             <span class="symbol-cell">${escapeHtml(position.symbol)}</span>
-            ${position.isOption ? `<span class="tag">${escapeHtml(position.optionType)} ${escapeHtml(String(position.strikePrice))}</span>` : ""}
+            ${
+              position.isOption
+                ? `<span class="tag option-tag ${position.optionType === "P" || position.optionType === "PUT" ? "is-put" : "is-call"}">${escapeHtml(formatOptionLabel(position))}</span>`
+                : ""
+            }
           </td>
           <td>${escapeHtml(displayGroupName(position.assetCategory))}</td>
-          <td><span class="tag">${escapeHtml(displaySide(position.side))}</span></td>
+          <td><span class="tag side-tag ${position.side === "Short" ? "is-short" : "is-long"}">${escapeHtml(displaySide(position.side))}</span></td>
           <td class="numeric">${formatNumber(position.quantity)}</td>
-          <td class="numeric">${formatMoney(position.value, currency)}</td>
+          <td class="numeric column-strong">${formatMoney(position.value, currency)}</td>
           <td class="numeric">${formatMoney(position.costBasis, currency)}</td>
-          <td class="numeric ${valueTone(position.unrealizedPL)}">${formatMoney(position.unrealizedPL, currency)}</td>
+          <td class="numeric column-strong ${valueTone(position.unrealizedPL)}">${formatMoney(position.unrealizedPL, currency)}</td>
           <td>${escapeHtml(position.currency)}</td>
         </tr>
       `
@@ -1037,14 +1135,13 @@ function renderPositionAssetPie(positions, currency) {
   const rows = buildPositionAssetAllocation(positions);
   if (!rows.length) return `<div class="empty-state">${t("noPositionMarketValue")}</div>`;
 
-  const palette = ["#3186f6", "#0b6b5d", "#b57936", "#7c6ee6", "#d85d5d", "#2aa6a1", "#69a64d", "#bd6aa8"];
   let cursor = 0;
   const gradient = rows
     .map((row, index) => {
       const start = cursor;
       const end = cursor + row.weight * 100;
       cursor = end;
-      return `${palette[index % palette.length]} ${start.toFixed(2)}% ${end.toFixed(2)}%`;
+      return `${assetColor(row.name, index)} ${start.toFixed(2)}% ${end.toFixed(2)}%`;
     })
     .join(", ");
   const total = rows.reduce((sum, row) => sum + row.value, 0);
@@ -1058,7 +1155,7 @@ function renderPositionAssetPie(positions, currency) {
             (row, index) => `
               <div class="position-pie-row">
                 <span class="position-pie-label">
-                  <i style="background:${palette[index % palette.length]}"></i>
+                  <i style="background:${assetColor(row.name, index)}"></i>
                   ${escapeHtml(row.name)}
                 </span>
                 <span class="position-pie-value">
@@ -1451,9 +1548,10 @@ function bindDashboardEvents() {
           .toLowerCase()
           .includes(query);
       });
-      tableBody.innerHTML = renderPositionRows(filtered, currentData.baseCurrency);
+      const sorted = sortPositionsByValue(filtered);
+      tableBody.innerHTML = renderPositionRows(sorted, currentData.baseCurrency);
       if (positionAssetPie) {
-        positionAssetPie.innerHTML = renderPositionAssetPie(filtered, currentData.baseCurrency);
+        positionAssetPie.innerHTML = renderPositionAssetPie(sorted, currentData.baseCurrency);
       }
     });
   }
@@ -1463,10 +1561,14 @@ function displayGroupName(name) {
   const labels = {
     Cash: t("cashAsset"),
     Stocks: t("stocks"),
+    Stock: t("stocks"),
     Options: t("options"),
+    Option: t("options"),
     Forex: t("forex"),
+    Currencies: t("forex"),
     "Equity and Index Options": t("options"),
-    Total: t("total")
+    Total: t("total"),
+    Other: "Other"
   };
 
   return labels[name] || name;
@@ -1476,6 +1578,17 @@ function displaySide(side) {
   if (side === "Long") return t("long");
   if (side === "Short") return t("short");
   return side;
+}
+
+function formatOptionLabel(position) {
+  const type = position.optionType === "P" ? "Put" : position.optionType === "C" ? "Call" : position.optionType || "Option";
+  const strike = position.strikePrice ? formatNumber(position.strikePrice, 2) : "";
+  const expiry = position.expiry ? ` ${position.expiry}` : "";
+  return `${type}${strike ? ` ${strike}` : ""}${expiry}`;
+}
+
+function assetColor(name, index = 0) {
+  return ASSET_COLORS[name] || ASSET_COLORS[displayGroupName(name)] || CHART_COLORS[index % CHART_COLORS.length];
 }
 
 function displayNavLabel(row) {
