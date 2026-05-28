@@ -452,7 +452,6 @@ function renderUpload(errorMessage = "") {
         <p class="eyebrow">${t("eyebrow")}</p>
         <h1>${t("homeTitle")}</h1>
         <p>${t("homeIntro")}</p>
-        <img class="preview-asset" src="./assets/statement-preview.svg" alt="${t("previewAlt")}" />
       </div>
 
       <div class="upload-panel">
@@ -467,6 +466,8 @@ function renderUpload(errorMessage = "") {
             </span>
           </span>
         </label>
+
+        <div class="upload-divider"><span>OR</span></div>
 
         <div class="paste-box">
           <label for="csvText">${t("pasteLabel")}</label>
