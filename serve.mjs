@@ -1,10 +1,10 @@
 import { createServer } from "node:http";
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { dirname, extname, join, normalize } from "node:path";
+import { dirname, extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
-const rootPrefix = root.endsWith("\\") ? root : `${root}\\`;
+const rootPrefix = root.endsWith(sep) ? root : `${root}${sep}`;
 const port = Number(process.env.PORT || 4177);
 const host = "127.0.0.1";
 
